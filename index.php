@@ -1,19 +1,21 @@
 <?php
 include 'controller.php';
 $view = isset($_GET['view']) ? $_GET['view'] : 'tabela';
+$campeonato_nome = ConfigModel::get($conn, 'campeonato_nome');
+$campeonato_descricao = ConfigModel::get($conn, 'campeonato_descricao');
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <title>Tabela Brasileirão</title>
+  <title><?= htmlspecialchars($campeonato_nome) ?> — <?= htmlspecialchars($campeonato_descricao) ?></title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚽</text></svg>">
   <link rel="stylesheet" href="estilo.css">
 </head>
 <body>
 
   <div class="page-header">
-    <h1>Brasileirão <small>Série A</small></h1>
+    <h1><?= htmlspecialchars($campeonato_nome) ?> <small><?= htmlspecialchars($campeonato_descricao) ?></small></h1>
   </div>
 
   <?php if ($view === 'tabela'): ?>
@@ -56,14 +58,12 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'tabela';
               </tr>
             </thead>
               <tbody>
-              <?php exibirTabela($conn); ?>
+              <?= exibirTabela($conn) ?>
               </tbody>
           </table>
         </div>
         <div class="voltar-link-container">
-          <a href="lancar.php" class="voltar-link">Lançar Resultado de Jogo</a>
-          <a href="cadastro.php" class="voltar-link">Cadastrar Novo Jogo</a>
-          <a href="controller.php?action=export_csv" class="voltar-link">Exportar CSV</a>
+          <a href="admin/login.php" class="voltar-link">Painel Administrativo</a>
         </div>
       </div>
 
@@ -82,7 +82,7 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'tabela';
           <button class="nav-arrow" onclick="mudarRodada(1)" <?php echo $rodada_atual >= $ultima_rodada ? 'disabled' : ''; ?>>&gt;</button>
         </div>
         <div id="jogos-rodada">
-          <?php exibirJogos($conn, $rodada_atual); ?>
+          <?= exibirJogos($conn, $rodada_atual) ?>
         </div>
       </div>
     </div>
@@ -96,11 +96,9 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'tabela';
         if (novaRodada < 1) novaRodada = 1;
         if (novaRodada > <?php echo $ultima_rodada; ?>) novaRodada = <?php echo $ultima_rodada; ?>;
         
-        // Mantém outros parâmetros da URL (como busca)
         urlParams.set('rodada', novaRodada);
         urlParams.set('view', 'tabela');
         
-        // Verifica se há parâmetro de busca para manter
         const busca = urlParams.get('busca');
         if (busca) {
             urlParams.set('busca', busca);

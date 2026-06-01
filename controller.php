@@ -24,40 +24,61 @@ function verificarCsrf() {
   if (!isset($_POST['csrf_token']) || !isset($_SESSION['csrf_token']) ||
       !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
     error_log("CSRF validation failed");
-    $action = $_GET['action'] ?? '';
-    $destino = match ($action) { 'save_next', 'add_team', 'delete_team' => 'cadastro.php', default => 'lancar.php' };
-    header("Location: $destino?error=csrf");
+    header("Location: admin/login.php?error=csrf");
     exit();
   }
 }
 
-function verificarSenha() {
-  if (!isset($_POST['senha']) || !password_verify($_POST['senha'], ADMIN_PASSWORD_HASH)) {
-    header("Location: index.php?view=tabela&error=2");
+// --- Admin auth ---
+function requerAdmin() {
+  if (empty($_SESSION['admin_logged_in'])) {
+    header("Location: admin/login.php");
     exit();
   }
 }
 
-// --- Actions ---
+// --- Ações POST ---
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['action'])) {
-  if ($_GET['action'] === 'save') {
-    verificarCsrf();
-    verificarSenha();
 
+  // --- Login ---
+  if ($_GET['action'] === 'admin_login') {
+    if (!isset($_POST['senha']) || !password_verify($_POST['senha'], ADMIN_PASSWORD_HASH)) {
+      header("Location: admin/login.php?error=1");
+      exit();
+    }
+    session_regenerate_id(true);
+    $_SESSION['admin_logged_in'] = true;
+    header("Location: admin/index.php");
+    exit();
+  }
+
+  // --- Logout ---
+  if ($_GET['action'] === 'admin_logout') {
+    $_SESSION = [];
+    session_destroy();
+    header("Location: admin/login.php");
+    exit();
+  }
+
+  // --- Todas as ações abaixo requerem admin logado ---
+  verificarCsrf();
+  requerAdmin();
+
+  if ($_GET['action'] === 'save') {
     $jogo_id = (int)$_POST['jogo_id'];
     $gols_casa = (int)$_POST['gols_casa'];
     $gols_visitante = (int)$_POST['gols_visitante'];
 
     $jogo = JogoModel::buscarParaResultado($conn, $jogo_id);
     if (!$jogo) {
-      header("Location: lancar.php?error=3");
+      header("Location: admin/jogos.php?error=3");
       exit();
     }
 
     if (!JogoModel::salvarResultado($conn, $jogo_id, $gols_casa, $gols_visitante)) {
       error_log("Erro ao salvar resultado do jogo $jogo_id");
-      header("Location: lancar.php?error=7");
+      header("Location: admin/jogos.php?error=7");
       exit();
     }
 
@@ -73,16 +94,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['action'])) {
     }
 
     TimeModel::recalcularAproveitamento($conn);
-    header("Location: lancar.php?success=1");
+    header("Location: admin/jogos.php?success=1");
     exit();
   }
 
   if ($_GET['action'] === 'save_next') {
-    verificarCsrf();
-    verificarSenha();
-
     if (!isset($_POST['time_casa'], $_POST['time_visitante'], $_POST['rodada'], $_POST['data_jogo'])) {
-      header("Location: cadastro.php?error=5");
+      header("Location: admin/jogos.php?error=5");
       exit();
     }
 
@@ -92,17 +110,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['action'])) {
     $data_jogo = $_POST['data_jogo'];
 
     if ($time_casa === $time_visitante) {
-      header("Location: cadastro.php?error=1");
+      header("Location: admin/jogos.php?error=1");
       exit();
     }
 
     if ($rodada < 1) {
-      header("Location: cadastro.php?error=6");
+      header("Location: admin/jogos.php?error=6");
       exit();
     }
 
     if (!strtotime($data_jogo)) {
-      header("Location: cadastro.php?error=4");
+      header("Location: admin/jogos.php?error=4");
       exit();
     }
 
@@ -110,26 +128,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['action'])) {
     $resultado = JogoModel::cadastrar($conn, $time_casa, $time_visitante, $rodada, $data_formatada);
 
     if ($resultado === true) {
-      header("Location: cadastro.php?success=2");
+      header("Location: admin/jogos.php?success=2");
     } else {
       error_log("Erro ao cadastrar jogo: $resultado");
-      header("Location: cadastro.php?error=7");
+      header("Location: admin/jogos.php?error=7");
     }
     exit();
   }
 
-  // --- Editar resultado ---
   if ($_GET['action'] === 'edit') {
-    verificarCsrf();
-    verificarSenha();
-
     $jogo_id = (int)$_POST['jogo_id'];
     $gols_casa = (int)$_POST['gols_casa'];
     $gols_visitante = (int)$_POST['gols_visitante'];
 
     $jogo = JogoModel::buscarCompleto($conn, $jogo_id);
     if (!$jogo || $jogo['gols_casa'] === null) {
-      header("Location: lancar.php?error=3");
+      header("Location: admin/jogos.php?error=3");
       exit();
     }
 
@@ -160,58 +174,62 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['action'])) {
     }
 
     TimeModel::recalcularAproveitamento($conn);
-    header("Location: lancar.php?success=2");
+    header("Location: admin/jogos.php?success=2");
     exit();
   }
 
-  // --- Adicionar time ---
   if ($_GET['action'] === 'add_team') {
-    verificarCsrf();
-    verificarSenha();
-
     $nome = trim($_POST['nome'] ?? '');
     if ($nome === '') {
-      header("Location: cadastro.php?error=8");
+      header("Location: admin/times.php?error=8");
       exit();
     }
 
     $resultado = TimeModel::adicionar($conn, $nome);
     if ($resultado === true) {
-      header("Location: cadastro.php?success=3");
+      header("Location: admin/times.php?success=3");
     } else {
       error_log("Erro ao adicionar time: $resultado");
-      header("Location: cadastro.php?error=7");
+      header("Location: admin/times.php?error=7");
     }
     exit();
   }
 
-  // --- Remover time ---
   if ($_GET['action'] === 'delete_team') {
-    verificarCsrf();
-    verificarSenha();
-
     $nome = $_POST['nome'] ?? '';
     if ($nome === '') {
-      header("Location: cadastro.php?error=5");
+      header("Location: admin/times.php?error=5");
       exit();
     }
 
     if (TimeModel::existeEmJogo($conn, $nome)) {
-      header("Location: cadastro.php?error=9");
+      header("Location: admin/times.php?error=9");
       exit();
     }
 
     if (TimeModel::remover($conn, $nome)) {
-      header("Location: cadastro.php?success=4");
+      header("Location: admin/times.php?success=4");
     } else {
-      header("Location: cadastro.php?error=7");
+      header("Location: admin/times.php?error=7");
     }
+    exit();
+  }
+
+  if ($_GET['action'] === 'save_config') {
+    if (!isset($_POST['campeonato_nome'], $_POST['campeonato_descricao'])) {
+      header("Location: admin/configuracoes.php?error=5");
+      exit();
+    }
+    ConfigModel::set($conn, 'campeonato_nome', $_POST['campeonato_nome']);
+    ConfigModel::set($conn, 'campeonato_descricao', $_POST['campeonato_descricao']);
+    header("Location: admin/configuracoes.php?success=1");
     exit();
   }
 }
 
 // --- Export CSV (GET) ---
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && $_GET['action'] === 'export_csv') {
+  requerAdmin();
   $times = TimeModel::listar($conn, 'pontos', 'DESC', '');
   header('Content-Type: text/csv; charset=utf-8');
   header('Content-Disposition: attachment; filename=tabela.csv');

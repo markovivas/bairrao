@@ -37,3 +37,13 @@ CREATE TABLE IF NOT EXISTS historico_jogos (
   INDEX idx_rodada (rodada),
   INDEX idx_data_jogo (data_jogo)
 );
+
+CREATE TABLE IF NOT EXISTS configuracoes (
+  chave VARCHAR(50) PRIMARY KEY,
+  valor VARCHAR(255) NOT NULL
+);
+
+INSERT INTO configuracoes (chave, valor) VALUES
+('campeonato_nome', 'Brasileirão'),
+('campeonato_descricao', 'Série A')
+ON DUPLICATE KEY UPDATE valor = valor;

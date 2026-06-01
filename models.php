@@ -47,8 +47,9 @@ class TimeModel {
       saldo_gols = saldo_gols + (? - ?),
       ultimos_jogos = CONCAT(?, IFNULL(ultimos_jogos, ''))
       WHERE nome = ?");
+    $historico = $resultado . ',';
     $stmt->bind_param("iiiiiiiiss", $pontos, $vitorias, $empates, $derrotas,
-                      $gols_pro, $gols_contra, $gols_pro, $gols_contra, $resultado . ',', $time);
+                      $gols_pro, $gols_contra, $gols_pro, $gols_contra, $historico, $time);
     $stmt->execute();
     $stmt->close();
   }
@@ -190,7 +191,7 @@ class JogoModel {
   }
 
   static function listarSemResultado($conn) {
-    $result = $conn->query("SELECT id, time_casa, time_visitante, rodada FROM historico_jogos WHERE gols_casa IS NULL AND gols_visitante IS NULL ORDER BY rodada, data_jogo");
+    $result = $conn->query("SELECT id, time_casa, time_visitante, rodada, data_jogo FROM historico_jogos WHERE gols_casa IS NULL AND gols_visitante IS NULL ORDER BY rodada, data_jogo");
     $jogos = [];
     while ($row = $result->fetch_assoc()) {
       $jogos[] = $row;
@@ -199,7 +200,7 @@ class JogoModel {
   }
 
   static function listarComResultado($conn) {
-    $result = $conn->query("SELECT id, time_casa, time_visitante, rodada, gols_casa, gols_visitante FROM historico_jogos WHERE gols_casa IS NOT NULL AND gols_visitante IS NOT NULL ORDER BY rodada DESC, data_jogo DESC");
+    $result = $conn->query("SELECT id, time_casa, time_visitante, rodada, gols_casa, gols_visitante, data_jogo FROM historico_jogos WHERE gols_casa IS NOT NULL AND gols_visitante IS NOT NULL ORDER BY rodada DESC, data_jogo DESC");
     $jogos = [];
     while ($row = $result->fetch_assoc()) {
       $jogos[] = $row;
@@ -230,5 +231,43 @@ class JogoModel {
     $result = $conn->query("SELECT MAX(rodada) as ultima FROM historico_jogos");
     $row = $result->fetch_assoc();
     return (int)($row['ultima'] ?? 1);
+  }
+
+  static function totalJogos($conn) {
+    $result = $conn->query("SELECT COUNT(*) as total FROM historico_jogos");
+    return (int)$result->fetch_assoc()['total'];
+  }
+
+  static function totalComResultado($conn) {
+    $result = $conn->query("SELECT COUNT(*) as total FROM historico_jogos WHERE gols_casa IS NOT NULL");
+    return (int)$result->fetch_assoc()['total'];
+  }
+}
+
+class ConfigModel {
+  static function get($conn, $chave) {
+    $stmt = $conn->prepare("SELECT valor FROM configuracoes WHERE chave = ?");
+    $stmt->bind_param("s", $chave);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $row = $result->fetch_assoc();
+    $stmt->close();
+    return $row['valor'] ?? '';
+  }
+
+  static function set($conn, $chave, $valor) {
+    $stmt = $conn->prepare("INSERT INTO configuracoes (chave, valor) VALUES (?, ?) ON DUPLICATE KEY UPDATE valor = ?");
+    $stmt->bind_param("sss", $chave, $valor, $valor);
+    $stmt->execute();
+    $stmt->close();
+  }
+
+  static function getAll($conn) {
+    $result = $conn->query("SELECT chave, valor FROM configuracoes");
+    $dados = [];
+    while ($row = $result->fetch_assoc()) {
+      $dados[$row['chave']] = $row['valor'];
+    }
+    return $dados;
   }
 }
