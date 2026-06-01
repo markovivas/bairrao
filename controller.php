@@ -1,240 +1,228 @@
 <?php
-$conn = new mysqli("localhost", "root", "", "tabela");
+session_start();
+
+require_once 'config.php';
+require_once 'models.php';
+require_once 'views.php';
+
+$conn = new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME);
 if ($conn->connect_error) {
-  die("Conexão falhou: " . $conn->connect_error);
+  error_log("DB connection failed: " . $conn->connect_error);
+  die("Erro de conexão com o banco de dados.");
 }
 
-// Definir senha de administração
-define('ADMIN_PASSWORD', 'senha123');
-
-function verificarSenha() {
-    if (!isset($_POST['senha']) || $_POST['senha'] !== ADMIN_PASSWORD) {
-        header("Location: index.php?view=tabela&error=2");
-        exit();
-    }
-}
-
-function displayTeams($conn) {
-  $ordenar_por = isset($_GET['ordenar']) ? $conn->real_escape_string($_GET['ordenar']) : 'pontos';
-  $ordem = isset($_GET['ordem']) && $_GET['ordem'] === 'asc' ? 'ASC' : 'DESC';
-  $busca = isset($_GET['busca']) ? $conn->real_escape_string($_GET['busca']) : '';
-  $filtro = $busca ? "WHERE nome LIKE '%$busca%'" : '';
-
-  $sql = "SELECT * FROM times $filtro ORDER BY $ordenar_por $ordem, saldo_gols DESC, gols_pro DESC";
-  $result = $conn->query($sql);
-
-  if ($result->num_rows > 0) {
-    $pos = 1;
-    while ($row = $result->fetch_assoc()) {
-      $nome_time = $row['nome'];
-      $nome_arquivo = preg_replace('/[^a-zA-Z0-9]/', '', strtolower(iconv('UTF-8', 'ASCII//TRANSLIT', $nome_time)));
-      $caminho_escudo = "escudos/$nome_arquivo.png";
-      if (!file_exists($caminho_escudo)) {
-        $caminho_escudo = "escudos/escudo-generico.png";
-      }
-
-      echo "<tr>";
-      echo "<td>{$pos}</td>";
-      echo "<td><div style='display: flex; align-items: center; justify-content: center; gap: 10px;'>";
-      echo "<img src='{$caminho_escudo}' class='escudo' alt='{$row['nome']}'>";
-      echo $row['nome'];
-      echo "</div></td>";
-      echo "<td>{$row['pontos']}</td>";
-      echo "<td>{$row['jogos']}</td>";
-      echo "<td>{$row['vitorias']}</td>";
-      echo "<td>{$row['empates']}</td>";
-      echo "<td>{$row['derrotas']}</td>";
-      echo "<td>{$row['gols_pro']}</td>";
-      echo "<td>{$row['gols_contra']}</td>";
-      echo "<td>{$row['saldo_gols']}</td>";
-      echo "<td>{$row['aproveitamento']}</td>";
-      echo "<td class='ultimos-jogos'>";
-      foreach (explode(",", $row['ultimos_jogos']) as $res) {
-        if ($res) echo "<span class='$res'></span>";
-      }
-      echo "</td></tr>";
-      $pos++;
-    }
-  } else {
-    echo "<tr><td colspan='12'>Nenhum dado encontrado.</td></tr>";
+// --- CSRF ---
+function gerarTokenCsrf() {
+  if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
   }
+  return $_SESSION['csrf_token'];
 }
 
-function displayGames($conn, $rodada) {
-  $sql = "SELECT * FROM historico_jogos WHERE rodada = $rodada ORDER BY data_jogo";
-  $result = $conn->query($sql);
-  if ($result->num_rows > 0) {
-    while ($row = $result->fetch_assoc()) {
-      $data = new DateTime($row['data_jogo']);
-      $diaSemana = $data->format('l');
-      $diaSemana = str_replace(
-        ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
-        ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'],
-        $diaSemana
-      );
-
-      // Obter caminhos dos escudos
-      $nome_casa = preg_replace('/[^a-zA-Z0-9]/', '', strtolower(iconv('UTF-8', 'ASCII//TRANSLIT', $row['time_casa'])));
-      $nome_visitante = preg_replace('/[^a-zA-Z0-9]/', '', strtolower(iconv('UTF-8', 'ASCII//TRANSLIT', $row['time_visitante'])));
-      $escudo_casa = file_exists("escudos/$nome_casa.png") ? "escudos/$nome_casa.png" : "escudos/escudo-generico.png";
-      $escudo_visitante = file_exists("escudos/$nome_visitante.png") ? "escudos/$nome_visitante.png" : "escudos/escudo-generico.png";
-
-      echo "<div class='jogo-item'>";
-      echo "<div class='jogo-rodada'>Rodada {$row['rodada']}</div>";
-      echo "<div class='jogo-times'>";
-      echo "<div class='time-com-escudo'><img src='$escudo_casa' class='escudo-jogo' alt='{$row['time_casa']}'> {$row['time_casa']}</div>";
-      if ($row['gols_casa'] !== null && $row['gols_visitante'] !== null) {
-        echo "<div class='jogo-placar'>";
-        echo "<span>{$row['gols_casa']}</span>";
-        echo "<span>X</span>";
-        echo "<span>{$row['gols_visitante']}</span>";
-        echo "</div>";
-      } else {
-        echo "<div class='jogo-placar'><span>X</span></div>";
-      }
-      echo "<div class='time-com-escudo'><img src='$escudo_visitante' class='escudo-jogo' alt='{$row['time_visitante']}'> {$row['time_visitante']}</div>";
-      echo "</div>";
-      echo "<div class='jogo-info'>";
-      echo "<span>{$data->format('d/m')} - {$diaSemana}</span>";
-      echo "<span>{$data->format('H:i')}</span>";
-      echo "</div>";
-      echo "</div>";
-    }
-  } else {
-    echo "<p>Nenhum jogo cadastrado para a rodada $rodada.</p>";
-  }
-}
-
-function saveGameResult($conn) {
-  if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['action']) && $_GET['action'] === 'save') {
-    verificarSenha();
-    
-    $jogo_id = (int)$_POST['jogo_id'];
-    $gols_casa = (int)$_POST['gols_casa'];
-    $gols_visitante = (int)$_POST['gols_visitante'];
-
-    // Verificar se o jogo existe
-    $sql = "SELECT time_casa, time_visitante, rodada FROM historico_jogos WHERE id = $jogo_id AND gols_casa IS NULL AND gols_visitante IS NULL";
-    $result = $conn->query($sql);
-    if ($result->num_rows === 0) {
-      header("Location: lancar.php?error=3");
-      exit();
-    }
-    $jogo = $result->fetch_assoc();
-    $time_casa = $conn->real_escape_string($jogo['time_casa']);
-    $time_visitante = $conn->real_escape_string($jogo['time_visitante']);
-    $rodada = (int)$jogo['rodada'];
-
-    // Atualizar o jogo com os resultados
-    $sql_update = "UPDATE historico_jogos SET gols_casa = $gols_casa, gols_visitante = $gols_visitante WHERE id = $jogo_id";
-    if (!$conn->query($sql_update)) {
-      die("Erro ao registrar resultado: " . $conn->error);
-    }
-
-    // Função para atualizar estatísticas
-    function atualizarEstatisticas($conn, $time, $gols_pro, $gols_contra, $resultado) {
-      $pontos = 0;
-      $vitorias = 0;
-      $empates = 0;
-      $derrotas = 0;
-      switch ($resultado) {
-        case 'v':
-          $pontos = 3;
-          $vitorias = 1;
-          break;
-        case 'e':
-          $pontos = 1;
-          $empates = 1;
-          break;
-        case 'd':
-          $derrotas = 1;
-          break;
-      }
-      $sql = "UPDATE times SET 
-              pontos = pontos + $pontos,
-              jogos = jogos + 1,
-              vitorias = vitorias + $vitorias,
-              empates = empates + $empates,
-              derrotas = derrotas + $derrotas,
-              gols_pro = gols_pro + $gols_pro,
-              gols_contra = gols_contra + $gols_contra,
-              saldo_gols = saldo_gols + ($gols_pro - $gols_contra),
-              ultimos_jogos = CONCAT('$resultado,', IFNULL(ultimos_jogos, ''))
-              WHERE nome = '$time'";
-      if (!$conn->query($sql)) {
-        die("Erro ao atualizar estatísticas do time $time: " . $conn->error);
-      }
-    }
-
-    // Atualizar estatísticas com base no resultado
-    if ($gols_casa > $gols_visitante) {
-      atualizarEstatisticas($conn, $time_casa, $gols_casa, $gols_visitante, 'v');
-      atualizarEstatisticas($conn, $time_visitante, $gols_visitante, $gols_casa, 'd');
-    } elseif ($gols_casa == $gols_visitante) {
-      atualizarEstatisticas($conn, $time_casa, $gols_casa, $gols_visitante, 'e');
-      atualizarEstatisticas($conn, $time_visitante, $gols_visitante, $gols_casa, 'e');
-    } else {
-      atualizarEstatisticas($conn, $time_casa, $gols_casa, $gols_visitante, 'd');
-      atualizarEstatisticas($conn, $time_visitante, $gols_visitante, $gols_casa, 'v');
-    }
-
-    // Atualizar aproveitamento
-    $conn->query("UPDATE times SET aproveitamento = ROUND((pontos / (jogos * 3)) * 100) WHERE jogos > 0");
-    header("Location: lancar.php?success=1");
+function verificarCsrf() {
+  if ($_SERVER['REQUEST_METHOD'] !== 'POST') return;
+  if (!isset($_POST['csrf_token']) || !isset($_SESSION['csrf_token']) ||
+      !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
+    error_log("CSRF validation failed");
+    $action = $_GET['action'] ?? '';
+    $destino = match ($action) { 'save_next', 'add_team', 'delete_team' => 'cadastro.php', default => 'lancar.php' };
+    header("Location: $destino?error=csrf");
     exit();
   }
 }
 
-function saveNextGame($conn) {
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['action']) && $_GET['action'] === 'save_next') {
-        verificarSenha();
-        
-        // Verifica se todos os campos necessários foram enviados
-        if (!isset($_POST['time_casa']) || !isset($_POST['time_visitante']) || !isset($_POST['rodada']) || !isset($_POST['data_jogo'])) {
-            header("Location: cadastro.php?error=5");
-            exit();
-        }
-
-        $time_casa = $conn->real_escape_string($_POST['time_casa']);
-        $time_visitante = $conn->real_escape_string($_POST['time_visitante']);
-        $rodada = (int)$_POST['rodada'];
-        $data_jogo = $conn->real_escape_string($_POST['data_jogo']);
-
-        // Validações
-        if ($time_casa === $time_visitante) {
-            header("Location: cadastro.php?error=1");
-            exit();
-        }
-
-        if ($rodada < 1) {
-            header("Location: cadastro.php?error=6");
-            exit();
-        }
-
-        if (!strtotime($data_jogo)) {
-            header("Location: cadastro.php?error=4");
-            exit();
-        }
-
-        // Formata a data para o formato MySQL
-        $data_formatada = date('Y-m-d H:i:s', strtotime($data_jogo));
-
-        $sql = "INSERT INTO historico_jogos (time_casa, time_visitante, rodada, data_jogo) 
-               VALUES ('$time_casa', '$time_visitante', $rodada, '$data_formatada')";
-        
-        if ($conn->query($sql)) {
-            header("Location: cadastro.php?success=2");
-        } else {
-            // Adiciona mensagem de erro mais detalhada
-            $error_msg = urlencode("Erro ao cadastrar jogo: " . $conn->error);
-            header("Location: cadastro.php?error=7&detail=" . $error_msg);
-        }
-        exit();
-    }
+function verificarSenha() {
+  if (!isset($_POST['senha']) || !password_verify($_POST['senha'], ADMIN_PASSWORD_HASH)) {
+    header("Location: index.php?view=tabela&error=2");
+    exit();
+  }
 }
 
-// Handle game result saving
-saveGameResult($conn);
-// Handle next game saving
-saveNextGame($conn);
-?>
+// --- Actions ---
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['action'])) {
+  if ($_GET['action'] === 'save') {
+    verificarCsrf();
+    verificarSenha();
+
+    $jogo_id = (int)$_POST['jogo_id'];
+    $gols_casa = (int)$_POST['gols_casa'];
+    $gols_visitante = (int)$_POST['gols_visitante'];
+
+    $jogo = JogoModel::buscarParaResultado($conn, $jogo_id);
+    if (!$jogo) {
+      header("Location: lancar.php?error=3");
+      exit();
+    }
+
+    if (!JogoModel::salvarResultado($conn, $jogo_id, $gols_casa, $gols_visitante)) {
+      error_log("Erro ao salvar resultado do jogo $jogo_id");
+      header("Location: lancar.php?error=7");
+      exit();
+    }
+
+    if ($gols_casa > $gols_visitante) {
+      TimeModel::atualizarEstatisticas($conn, $jogo['time_casa'], $gols_casa, $gols_visitante, 'v', $jogo['rodada']);
+      TimeModel::atualizarEstatisticas($conn, $jogo['time_visitante'], $gols_visitante, $gols_casa, 'd', $jogo['rodada']);
+    } elseif ($gols_casa == $gols_visitante) {
+      TimeModel::atualizarEstatisticas($conn, $jogo['time_casa'], $gols_casa, $gols_visitante, 'e', $jogo['rodada']);
+      TimeModel::atualizarEstatisticas($conn, $jogo['time_visitante'], $gols_visitante, $gols_casa, 'e', $jogo['rodada']);
+    } else {
+      TimeModel::atualizarEstatisticas($conn, $jogo['time_casa'], $gols_casa, $gols_visitante, 'd', $jogo['rodada']);
+      TimeModel::atualizarEstatisticas($conn, $jogo['time_visitante'], $gols_visitante, $gols_casa, 'v', $jogo['rodada']);
+    }
+
+    TimeModel::recalcularAproveitamento($conn);
+    header("Location: lancar.php?success=1");
+    exit();
+  }
+
+  if ($_GET['action'] === 'save_next') {
+    verificarCsrf();
+    verificarSenha();
+
+    if (!isset($_POST['time_casa'], $_POST['time_visitante'], $_POST['rodada'], $_POST['data_jogo'])) {
+      header("Location: cadastro.php?error=5");
+      exit();
+    }
+
+    $time_casa = $_POST['time_casa'];
+    $time_visitante = $_POST['time_visitante'];
+    $rodada = (int)$_POST['rodada'];
+    $data_jogo = $_POST['data_jogo'];
+
+    if ($time_casa === $time_visitante) {
+      header("Location: cadastro.php?error=1");
+      exit();
+    }
+
+    if ($rodada < 1) {
+      header("Location: cadastro.php?error=6");
+      exit();
+    }
+
+    if (!strtotime($data_jogo)) {
+      header("Location: cadastro.php?error=4");
+      exit();
+    }
+
+    $data_formatada = date('Y-m-d H:i:s', strtotime($data_jogo));
+    $resultado = JogoModel::cadastrar($conn, $time_casa, $time_visitante, $rodada, $data_formatada);
+
+    if ($resultado === true) {
+      header("Location: cadastro.php?success=2");
+    } else {
+      error_log("Erro ao cadastrar jogo: $resultado");
+      header("Location: cadastro.php?error=7");
+    }
+    exit();
+  }
+
+  // --- Editar resultado ---
+  if ($_GET['action'] === 'edit') {
+    verificarCsrf();
+    verificarSenha();
+
+    $jogo_id = (int)$_POST['jogo_id'];
+    $gols_casa = (int)$_POST['gols_casa'];
+    $gols_visitante = (int)$_POST['gols_visitante'];
+
+    $jogo = JogoModel::buscarCompleto($conn, $jogo_id);
+    if (!$jogo || $jogo['gols_casa'] === null) {
+      header("Location: lancar.php?error=3");
+      exit();
+    }
+
+    $gols_old_casa = (int)$jogo['gols_casa'];
+    $gols_old_visitante = (int)$jogo['gols_visitante'];
+
+    $res_casa = $gols_old_casa > $gols_old_visitante ? 'v' : ($gols_old_casa == $gols_old_visitante ? 'e' : 'd');
+    $res_visitante = $gols_old_casa > $gols_old_visitante ? 'd' : ($gols_old_casa == $gols_old_visitante ? 'e' : 'v');
+
+    TimeModel::reverterEstatisticas($conn, $jogo['time_casa'], $gols_old_casa, $gols_old_visitante, $res_casa);
+    TimeModel::reverterEstatisticas($conn, $jogo['time_visitante'], $gols_old_visitante, $gols_old_casa, $res_visitante);
+
+    JogoModel::limparResultado($conn, $jogo_id);
+    TimeModel::reconstruirUltimosJogos($conn, $jogo['time_casa']);
+    TimeModel::reconstruirUltimosJogos($conn, $jogo['time_visitante']);
+
+    JogoModel::salvarResultado($conn, $jogo_id, $gols_casa, $gols_visitante);
+
+    if ($gols_casa > $gols_visitante) {
+      TimeModel::atualizarEstatisticas($conn, $jogo['time_casa'], $gols_casa, $gols_visitante, 'v', $jogo['rodada']);
+      TimeModel::atualizarEstatisticas($conn, $jogo['time_visitante'], $gols_visitante, $gols_casa, 'd', $jogo['rodada']);
+    } elseif ($gols_casa == $gols_visitante) {
+      TimeModel::atualizarEstatisticas($conn, $jogo['time_casa'], $gols_casa, $gols_visitante, 'e', $jogo['rodada']);
+      TimeModel::atualizarEstatisticas($conn, $jogo['time_visitante'], $gols_visitante, $gols_casa, 'e', $jogo['rodada']);
+    } else {
+      TimeModel::atualizarEstatisticas($conn, $jogo['time_casa'], $gols_casa, $gols_visitante, 'd', $jogo['rodada']);
+      TimeModel::atualizarEstatisticas($conn, $jogo['time_visitante'], $gols_visitante, $gols_casa, 'v', $jogo['rodada']);
+    }
+
+    TimeModel::recalcularAproveitamento($conn);
+    header("Location: lancar.php?success=2");
+    exit();
+  }
+
+  // --- Adicionar time ---
+  if ($_GET['action'] === 'add_team') {
+    verificarCsrf();
+    verificarSenha();
+
+    $nome = trim($_POST['nome'] ?? '');
+    if ($nome === '') {
+      header("Location: cadastro.php?error=8");
+      exit();
+    }
+
+    $resultado = TimeModel::adicionar($conn, $nome);
+    if ($resultado === true) {
+      header("Location: cadastro.php?success=3");
+    } else {
+      error_log("Erro ao adicionar time: $resultado");
+      header("Location: cadastro.php?error=7");
+    }
+    exit();
+  }
+
+  // --- Remover time ---
+  if ($_GET['action'] === 'delete_team') {
+    verificarCsrf();
+    verificarSenha();
+
+    $nome = $_POST['nome'] ?? '';
+    if ($nome === '') {
+      header("Location: cadastro.php?error=5");
+      exit();
+    }
+
+    if (TimeModel::existeEmJogo($conn, $nome)) {
+      header("Location: cadastro.php?error=9");
+      exit();
+    }
+
+    if (TimeModel::remover($conn, $nome)) {
+      header("Location: cadastro.php?success=4");
+    } else {
+      header("Location: cadastro.php?error=7");
+    }
+    exit();
+  }
+}
+
+// --- Export CSV (GET) ---
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && $_GET['action'] === 'export_csv') {
+  $times = TimeModel::listar($conn, 'pontos', 'DESC', '');
+  header('Content-Type: text/csv; charset=utf-8');
+  header('Content-Disposition: attachment; filename=tabela.csv');
+  $output = fopen('php://output', 'w');
+  fprintf($output, chr(0xEF) . chr(0xBB) . chr(0xBF));
+  fputcsv($output, ['#', 'Time', 'P', 'J', 'V', 'E', 'D', 'GP', 'GC', 'SG', '%']);
+  $pos = 1;
+  foreach ($times as $row) {
+    fputcsv($output, [$pos, $row['nome'], $row['pontos'], $row['jogos'], $row['vitorias'], $row['empates'], $row['derrotas'], $row['gols_pro'], $row['gols_contra'], $row['saldo_gols'], $row['aproveitamento']]);
+    $pos++;
+  }
+  fclose($output);
+  exit();
+}
