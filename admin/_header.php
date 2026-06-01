@@ -55,6 +55,7 @@ $pagina = basename($_SERVER['PHP_SELF']);
     <a href="times.php" class="<?= $pagina === 'times.php' ? 'active' : '' ?>">Times</a>
     <a href="configuracoes.php" class="<?= $pagina === 'configuracoes.php' ? 'active' : '' ?>">Configurações</a>
     <a href="exportar.php" class="<?= $pagina === 'exportar.php' ? 'active' : '' ?>">Exportar</a>
+    <a href="gerar.php" class="<?= $pagina === 'gerar.php' ? 'active' : '' ?>">Gerar Tabela</a>
     <a href="../index.php" class="sair" target="_blank">Ver Site</a>
     <a href="../controller.php?action=admin_logout" class="sair">Sair</a>
   </nav>

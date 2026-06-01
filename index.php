@@ -70,7 +70,7 @@ $campeonato_descricao = ConfigModel::get($conn, 'campeonato_descricao');
       <div class="jogos-section">
         <?php
         $ultima_rodada = JogoModel::ultimaRodada($conn);
-        $rodada_atual = $ultima_rodada;
+        $rodada_atual = JogoModel::proximaRodadaPendente($conn);
 
         if (isset($_GET['rodada'])) {
             $rodada_atual = max(1, min((int)$_GET['rodada'], $ultima_rodada));

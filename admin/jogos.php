@@ -8,14 +8,16 @@ $jogos_finalizados = JogoModel::listarComResultado($conn);
 $ultima_rodada = JogoModel::ultimaRodada($conn);
 $proxima_rodada = $ultima_rodada;
 
-// Buscar jogo para editar
+// Buscar jogo para editar resultado
 $editar_jogo = null;
 if (isset($_GET['editar'])) {
   $editar_jogo = JogoModel::buscarCompleto($conn, (int)$_GET['editar']);
 }
+// Buscar jogo pendente para editar data
+$editar_data_id = isset($_GET['editar_data']) ? (int)$_GET['editar_data'] : 0;
 
 $mensagens = [
-  'success' => ['1' => 'Resultado salvo com sucesso!', '2' => 'Jogo cadastrado com sucesso!', '3' => 'Jogo editado com sucesso!'],
+  'success' => ['1' => 'Resultado salvo com sucesso!', '2' => 'Jogo cadastrado com sucesso!', '3' => 'Data atualizada com sucesso!'],
   'error' => ['1' => 'Times devem ser diferentes.', '3' => 'Jogo não encontrado.', '4' => 'Data inválida.', '5' => 'Preencha todos os campos.', '6' => 'Rodada inválida.', '7' => 'Erro ao salvar.', '8' => 'Jogo já possui resultado.']
 ];
 ?>
@@ -63,7 +65,19 @@ $mensagens = [
       <div class="jogo-row">
         <div class="info">
           <strong><?= htmlspecialchars($j['time_casa']) ?></strong> × <strong><?= htmlspecialchars($j['time_visitante']) ?></strong>
-          <br><small style="color:#636e72;">Rodada <?= $j['rodada'] ?> — <?= date('d/m/Y H:i', strtotime($j['data_jogo'])) ?></small>
+          <br><small style="color:#636e72;">Rodada <?= $j['rodada'] ?>
+            <?php if ($editar_data_id === (int)$j['id']): ?>
+              <form method="POST" action="../controller.php?action=editar_data" class="inline-form" style="display:inline-flex;">
+                <input type="hidden" name="csrf_token" value="<?= gerarTokenCsrf() ?>">
+                <input type="hidden" name="jogo_id" value="<?= $j['id'] ?>">
+                <input type="datetime-local" name="data_jogo" value="<?= date('Y-m-d\TH:i', strtotime($j['data_jogo'])) ?>" required style="padding:4px;border:2px solid #e0e0e0;border-radius:4px;font-size:0.85em;">
+                <button type="submit" class="btn-admin btn-warning" style="padding:4px 10px;font-size:0.8em;">Salvar</button>
+                <a href="jogos.php" style="text-decoration:none;color:#636e72;font-size:0.8em;">Cancelar</a>
+              </form>
+            <?php else: ?>
+              — <?= date('d/m/Y H:i', strtotime($j['data_jogo'])) ?>
+            <?php endif; ?>
+          </small>
         </div>
         <div class="acoes">
           <form method="POST" action="../controller.php?action=save" class="inline-form">
@@ -72,8 +86,13 @@ $mensagens = [
             <input type="number" name="gols_casa" min="0" required style="width:50px;">
             <span style="font-weight:700;">×</span>
             <input type="number" name="gols_visitante" min="0" required style="width:50px;">
-            <button type="submit" class="btn-admin btn-success">Lançar</button>
+            <button type="submit" class="btn-admin btn-success" style="padding:4px 10px;font-size:0.8em;">Lançar</button>
           </form>
+          <?php if ($editar_data_id === (int)$j['id']): ?>
+            <span style="color:#636e72;font-size:0.8em;">Editando data...</span>
+          <?php else: ?>
+            <a href="jogos.php?editar_data=<?= $j['id'] ?>" class="btn-admin btn-warning" style="padding:4px 10px;font-size:0.8em;">Data</a>
+          <?php endif; ?>
         </div>
       </div>
     <?php endforeach; ?>

@@ -227,10 +227,25 @@ class JogoModel {
     return $ok;
   }
 
+  static function atualizarData($conn, $jogo_id, $data) {
+    $stmt = $conn->prepare("UPDATE historico_jogos SET data_jogo = ? WHERE id = ?");
+    $stmt->bind_param("si", $data, $jogo_id);
+    $stmt->execute();
+    $ok = $stmt->affected_rows > 0;
+    $stmt->close();
+    return $ok;
+  }
+
   static function ultimaRodada($conn) {
     $result = $conn->query("SELECT MAX(rodada) as ultima FROM historico_jogos");
     $row = $result->fetch_assoc();
     return (int)($row['ultima'] ?? 1);
+  }
+
+  static function proximaRodadaPendente($conn) {
+    $result = $conn->query("SELECT MIN(rodada) as rodada FROM historico_jogos WHERE gols_casa IS NULL");
+    $row = $result->fetch_assoc();
+    return $row['rodada'] !== null ? (int)$row['rodada'] : self::ultimaRodada($conn);
   }
 
   static function totalJogos($conn) {
@@ -241,6 +256,90 @@ class JogoModel {
   static function totalComResultado($conn) {
     $result = $conn->query("SELECT COUNT(*) as total FROM historico_jogos WHERE gols_casa IS NOT NULL");
     return (int)$result->fetch_assoc()['total'];
+  }
+
+  static function timesSorteados($nomes) {
+    shuffle($nomes);
+    return $nomes;
+  }
+
+  static function gerarTabela($conn, $nomes, $formato) {
+    $n = count($nomes);
+    if ($n < 2) return [];
+
+    if ($n % 2 != 0) {
+      $nomes[] = null;
+      $n++;
+    }
+
+    $times = $nomes;
+    $totalRounds = $n - 1;
+    $rounds = [];
+
+    for ($r = 0; $r < $totalRounds; $r++) {
+      $round = [];
+      for ($i = 0; $i < $n / 2; $i++) {
+        $casa = $times[$i];
+        $fora = $times[$n - 1 - $i];
+        if ($casa !== null && $fora !== null) {
+          if (rand(0, 1) === 0) {
+            $round[] = ['home' => $casa, 'away' => $fora];
+          } else {
+            $round[] = ['home' => $fora, 'away' => $casa];
+          }
+        }
+      }
+      $rounds[] = $round;
+
+      $fixo = $times[0];
+      $resto = array_slice($times, 1);
+      $ultimo = array_pop($resto);
+      array_unshift($resto, $ultimo);
+      $times = array_merge([$fixo], $resto);
+    }
+
+    shuffle($rounds);
+
+    if ($formato === 'ida_volta') {
+      $volta = [];
+      foreach ($rounds as $round) {
+        $r = [];
+        foreach ($round as $m) {
+          $r[] = ['home' => $m['away'], 'away' => $m['home']];
+        }
+        $volta[] = $r;
+      }
+      $rounds = array_merge($rounds, $volta);
+    }
+
+    return $rounds;
+  }
+
+  static function limparEZerar($conn) {
+    $conn->query("TRUNCATE TABLE historico_jogos");
+    $conn->query("UPDATE times SET pontos=0, jogos=0, vitorias=0, empates=0, derrotas=0, gols_pro=0, gols_contra=0, saldo_gols=0, aproveitamento=0, ultimos_jogos=''");
+  }
+
+  static function salvarTabelaGerada($conn, $rounds) {
+    self::limparEZerar($conn);
+
+    $data_padrao = date('Y-m-d H:i:s', strtotime('first day of January 2026 20:00:00'));
+    $stmt = $conn->prepare("INSERT INTO historico_jogos (time_casa, time_visitante, rodada, data_jogo) VALUES (?, ?, ?, ?)");
+    if (!$stmt) {
+      error_log("Erro ao preparar INSERT: " . $conn->error);
+      return false;
+    }
+    foreach ($rounds as $r => $matches) {
+      $rodada = $r + 1;
+      foreach ($matches as $m) {
+        $stmt->bind_param("ssis", $m['home'], $m['away'], $rodada, $data_padrao);
+        if (!$stmt->execute()) {
+          error_log("Erro ao inserir jogo: " . $stmt->error);
+        }
+      }
+    }
+    $stmt->close();
+    return true;
   }
 }
 

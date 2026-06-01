@@ -98,6 +98,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['action'])) {
     exit();
   }
 
+  if ($_GET['action'] === 'editar_data') {
+    $jogo_id = (int)$_POST['jogo_id'];
+    $data_jogo = $_POST['data_jogo'] ?? '';
+    if (!strtotime($data_jogo)) {
+      header("Location: admin/jogos.php?error=4");
+      exit();
+    }
+    $data_formatada = date('Y-m-d H:i:s', strtotime($data_jogo));
+    JogoModel::atualizarData($conn, $jogo_id, $data_formatada);
+    header("Location: admin/jogos.php?success=3");
+    exit();
+  }
+
   if ($_GET['action'] === 'save_next') {
     if (!isset($_POST['time_casa'], $_POST['time_visitante'], $_POST['rodada'], $_POST['data_jogo'])) {
       header("Location: admin/jogos.php?error=5");
@@ -223,6 +236,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['action'])) {
     ConfigModel::set($conn, 'campeonato_nome', $_POST['campeonato_nome']);
     ConfigModel::set($conn, 'campeonato_descricao', $_POST['campeonato_descricao']);
     header("Location: admin/configuracoes.php?success=1");
+    exit();
+  }
+
+  if ($_GET['action'] === 'gerar_tabela') {
+    $formato = $_POST['formato'] ?? '';
+    if (!in_array($formato, ['ida', 'ida_volta'], true)) {
+      header("Location: admin/gerar.php?error=4");
+      exit();
+    }
+
+    $nomes = TimeModel::listarNomes($conn);
+    if (count($nomes) < 2) {
+      header("Location: admin/gerar.php?error=2");
+      exit();
+    }
+
+    $nomes = JogoModel::timesSorteados($nomes);
+    $rounds = JogoModel::gerarTabela($conn, $nomes, $formato);
+    $_SESSION['preview_rounds'] = $rounds;
+    $_SESSION['preview_formato'] = $formato;
+    header("Location: admin/gerar.php?preview=1");
+    exit();
+  }
+
+  if ($_GET['action'] === 'gerar_salvar') {
+    if (!isset($_SESSION['preview_rounds'])) {
+      header("Location: admin/gerar.php?error=3");
+      exit();
+    }
+
+    $rounds = $_SESSION['preview_rounds'];
+    if (!JogoModel::salvarTabelaGerada($conn, $rounds)) {
+      header("Location: admin/gerar.php?error=7");
+      exit();
+    }
+
+    unset($_SESSION['preview_rounds'], $_SESSION['preview_formato']);
+    header("Location: admin/gerar.php?success=1");
     exit();
   }
 }
